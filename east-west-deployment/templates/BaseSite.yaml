@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  # ------------------------------------------------------------#
+  # Import Master.yaml template
+  # ------------------------------------------------------------#
+  ImageId:
+    Description: Enter the AMI ID of the EC2 instance.
+    Type: String
+  AllowIP:
+    Description: Enter the global IP of the terminal to be tested
+    Type: String
+  NeedSSMAccess:
+    Description: If enabled, SSM access to the instance will be available
+    Type: String
+    AllowedValues: [true, false]
+  # ------------------------------------------------------------#
+  # Import BaseVPC stack(aws-vpc.template.yaml file)
+  # ------------------------------------------------------------#
+  VPCId:
+    Description: Enter the VPC ID where you want to deploy the EC2 instance.
+    Type: String
+  PrivateSubnet1ID:
+    Description: Enter the Private Subnet ID where you want to deploy the EC2 instance.
+    Type: String
+  WebServerIngressAllowCIDR:
+    Description: CIDR from where webserver should be accessible
+    Type: String
+    
+# ------------------------------------------------------------#
+# Conditions
+# ------------------------------------------------------------#
+Conditions:
+  NeedSSM: 
+    !Equals [true, !Ref NeedSSMAccess]
+
+Resources:
+  # ------------------------------------------------------------#
+  # Resources for when you need SSM Access, Create IAM Role and Instance Profile
+  # ------------------------------------------------------------#
+  EC2Role:
+    Condition: NeedSSM
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub ${AWS::StackName}-EC2Role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+
+  InstanceProfile:
+    Condition: NeedSSM
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref EC2Role
+
+  # ------------------------------------------------------------#
+  # Create EC2 Instance
+  # ------------------------------------------------------------#
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref ImageId
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      IamInstanceProfile: !If
+        - NeedSSM
+        - !Ref InstanceProfile
+        - !Ref AWS::NoValue
+      SubnetId: !Ref PrivateSubnet1ID
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-WebServer
+      UserData: 
+        !Base64 |
+          #!/bin/bash
+          amazon-linux-extras install nginx1.12 -y
+          systemctl start nginx
+          systemctl enable nginx
+
+  # ------------------------------------------------------------#
+  # Create 2 Security Group for EC2 Instance
+  # ------------------------------------------------------------#
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-EC2-SG
+      GroupDescription: Used for Web Server
+      VpcId: !Ref VPCId
+      SecurityGroupIngress: 
+        - 
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref WebServerIngressAllowCIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-EC2-SG
+
+Outputs:
+  WebServerIP:
+    Description: Webserver IP
+    Value: !GetAtt EC2Instance.PrivateIp
+  InstanceProfile:
+    Condition: NeedSSM
+    Value: !Ref InstanceProfile
+    Description: Instance profile to be used for SSM access

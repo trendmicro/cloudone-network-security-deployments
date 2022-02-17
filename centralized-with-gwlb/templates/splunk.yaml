@@ -1,0 +1,344 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  # ------------------------------------------------------------#
+  # Import Master.yaml template
+  # ------------------------------------------------------------#
+  AllowIP:
+    Description: Enter the global IP of the terminal to be tested
+    Type: String
+  SyslogPort:
+    Description: Port number used by Splunk Server
+    Type: String
+  SecurityVPCCIDR:
+    Description: Specify the CIDR of the VPC where you want to deploy the NSVA
+    Type: String
+  ImageId:
+    Description: Enter the AMI ID of the EC2 instance.
+    Type: String
+  SplunkPassword:
+    Description: Password used by Splunk Server
+    Type: String
+  SplunkVersion:
+    Description: Splunk Version
+    Type: String
+  NeedSSMAccess:
+    Description: If enabled, SSM access to the instance will be available.
+    Type: String
+    AllowedValues: [true, false]
+  c1nsStackName: 
+    Description: Stack Name of the c1ns security vpc template
+    Type: String
+  # ------------------------------------------------------------#
+  # Import BaseVPC stack(aws-vpc.template.yaml file)
+  # ------------------------------------------------------------#
+  VPCID:
+    Description: Enter the VPC ID where you want to deploy the Splunk
+    Type: String
+  VPCCIDR:
+    Description: Enter the VPC CIDR where you want to deploy the Splunk
+    Type: String
+  # ------------------------------------------------------------#
+  # Import BaseSite stack(BaseSite.yaml file)
+  # ------------------------------------------------------------#
+  InstanceProfile:
+    Description: Instance profile to be used for SSM access
+    Type: String
+  # ------------------------------------------------------------#
+  # Import ModifyRTTemplate stack(last.yaml file)
+  # ------------------------------------------------------------#
+  RTID:
+    Description: Enter the Route Table ID where you want to deploy the Splunk
+    Type: String
+  PublicSubnet1ID:
+    Description: Enter the Public Subnet ID where you want to deploy the Splunk
+    Type: String
+  
+# ------------------------------------------------------------#
+# Conditions
+# ------------------------------------------------------------#
+Conditions:
+  NeedSSM: 
+    !Equals ["true", !Ref NeedSSMAccess]
+
+Resources:
+  # ------------------------------------------------------------#
+  # Create Lambda for VPC peering and modify route table
+  # ------------------------------------------------------------#
+  CreateVPCpeeringLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: 
+        Fn::Join:
+          - ""
+          - - Fn::Select:
+              - 2
+              - Fn::Split:
+                - "-"
+                - !Ref AWS::StackName
+            - "-CreateVPCpeeringLambdaRole"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref CreateVPCpeeringLambdaPolicy
+
+  CreateVPCpeeringLambdaPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: 
+        Fn::Join:
+          - ""
+          - - Fn::Select:
+              - 2
+              - Fn::Split:
+                - "-"
+                - !Ref AWS::StackName
+            - "-CreateVPCpeeringLambdaPolicy"
+      Path: /
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - ec2:DeleteTags
+              - ec2:AcceptVpcPeeringConnection
+              - ec2:DescribeVpcs
+              - ec2:CreateRoute
+              - ec2:DeleteVpcPeeringConnection
+              - ec2:CreateTags
+              - ec2:DescribeVpcPeeringConnections
+              - ec2:DeleteRoute
+              - ec2:CreateVpcPeeringConnection
+              - ec2:DescribeRouteTables
+            Resource: "*"
+            Effect: Allow
+
+  CreateVPCpeeringLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json, boto3, logging
+          import cfnresponse
+          import os
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          client = boto3.client('ec2')
+          BaseVPC = os.getenv("VPCID")
+          BaseVPCcidr = os.getenv("VPCCIDR")
+          BaseRTId = os.getenv("RTID")
+          StackName = os.getenv("STACKNAME")
+
+          def lambda_handler(event, context):
+            logger.info("event: {}".format(event))
+            status = cfnresponse.SUCCESS
+            try:
+              if event['RequestType'] == 'Create':
+                response = client.describe_vpcs(
+                  Filters=[
+                    {
+                      'Name': 'tag:aws:cloudformation:stack-name',
+                      'Values': [
+                        StackName
+                      ]
+                    },
+                  ],
+                )
+                nsvaVPC = response["Vpcs"][0]["VpcId"]
+                nsvaVPCcidr = response["Vpcs"][0]["CidrBlock"]
+                request = client.create_vpc_peering_connection(
+                  PeerVpcId=nsvaVPC,
+                  VpcId=BaseVPC,
+                  TagSpecifications=[
+                    {
+                      'ResourceType': 'vpc-peering-connection',
+                      'Tags': [
+                        {
+                          'Key': 'StackName',
+                          'Value': StackName
+                        },
+                      ]
+                    },
+                  ]
+                )
+                connectionId = request["VpcPeeringConnection"]["VpcPeeringConnectionId"]
+                client.accept_vpc_peering_connection(
+                  VpcPeeringConnectionId=connectionId
+                )
+                
+                nsvaRT = client.describe_route_tables(
+                  Filters=[
+                    {
+                      'Name': 'tag:aws:cloudformation:stack-name',
+                      'Values': [
+                        StackName,
+                      ]
+                    },
+                  ],
+                )
+                for i in range(len(nsvaRT['RouteTables'])):
+                  # NSVA side
+                  nsvaRTId = nsvaRT['RouteTables'][i]['RouteTableId']
+                  client.create_route(
+                    DestinationCidrBlock=BaseVPCcidr,
+                    RouteTableId=nsvaRTId,
+                    VpcPeeringConnectionId=connectionId
+                  )    
+                # Base side
+                client.create_route(
+                  DestinationCidrBlock=nsvaVPCcidr,
+                  RouteTableId=BaseRTId,
+                  VpcPeeringConnectionId=connectionId
+                )
+
+              if event['RequestType'] == 'Delete':
+                peerconnectionId = client.describe_vpc_peering_connections(
+                  Filters=[
+                    {
+                      'Name': 'tag:StackName',
+                      'Values': [
+                        StackName,
+                      ]
+                    },
+                  ],
+                )
+                delVpcPeeringConnectionId = peerconnectionId['VpcPeeringConnections'][0]['VpcPeeringConnectionId']
+                
+                client.delete_vpc_peering_connection(
+                  VpcPeeringConnectionId=delVpcPeeringConnectionId
+                )
+                
+                response = client.describe_vpcs(
+                  Filters=[
+                    {
+                      'Name': 'tag:aws:cloudformation:stack-name',
+                      'Values': [
+                        StackName
+                      ]
+                    },
+                  ],
+                )
+                nsvaVPCcidr = response["Vpcs"][0]["CidrBlock"]
+
+                nsvaRT = client.describe_route_tables(
+                  Filters=[
+                    {
+                      'Name': 'tag:aws:cloudformation:stack-name',
+                      'Values': [
+                        StackName,
+                      ]
+                    },
+                  ],
+                )
+                for i in range(len(nsvaRT['RouteTables'])):
+                  # NSVA side
+                  nsvaRTId = nsvaRT['RouteTables'][i]['RouteTableId']
+                  client.delete_route(
+                    DestinationCidrBlock=BaseVPCcidr,
+                    RouteTableId=nsvaRTId,
+                  )    
+                # Base side
+                client.delete_route(
+                  DestinationCidrBlock=nsvaVPCcidr,
+                  RouteTableId=BaseRTId,
+                )
+    
+            except Exception:
+              logger.error('Unhandled exception', exc_info=True)
+              status = cfnresponse.FAILED
+            finally:
+              cfnresponse.send(event, context, status, {}, None)
+      Role: !GetAtt CreateVPCpeeringLambdaRole.Arn
+      Environment: 
+        Variables: 
+          VPCID: !Ref VPCID
+          VPCCIDR: !Ref VPCCIDR
+          RTID: !Ref RTID
+          STACKNAME: !Ref c1nsStackName
+      FunctionName: 
+        Fn::Join:
+          - ""
+          - - Fn::Select:
+              - 2
+              - Fn::Split:
+                - "-"
+                - !Ref AWS::StackName
+            - "-CreateVPCpeering-Function"
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Runtime: python3.7
+      Timeout: 300
+
+  CreateVPCpeering:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt CreateVPCpeeringLambdaFunction.Arn
+
+  # ------------------------------------------------------------#
+  # Create Splunk Instance
+  # ------------------------------------------------------------#
+  SplunkSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+        GroupDescription: Security Group
+        VpcId: !Ref VPCID
+        SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: !Ref AllowIP
+        - IpProtocol: tcp
+          FromPort: !Ref SyslogPort
+          ToPort: !Ref SyslogPort
+          CidrIp: !Ref SecurityVPCCIDR
+  Splunk:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile: !If
+        - NeedSSM
+        - !Ref InstanceProfile
+        - !Ref AWS::NoValue
+      ImageId: !Ref ImageId
+      InstanceType: m5.large
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 40
+            VolumeType: gp3
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - Ref: SplunkSecurityGroup
+          SubnetId:
+            Ref: PublicSubnet1ID
+      Tags:
+      - Key: Name
+        Value: Splunk
+      UserData:
+        Fn::Base64: !Sub |
+            #!/bin/bash -x
+            yum update -y
+            yum install -y docker
+            systemctl enable docker
+            service docker start  
+            docker pull splunk/splunk:${SplunkVersion}
+            docker run -d -p 8000:8000 -p ${SyslogPort}:${SyslogPort}/tcp -e "SPLUNK_START_ARGS=--accept-license" -e "SPLUNK_PASSWORD=${SplunkPassword}" --name splunk splunk/splunk:${SplunkVersion}
+
+Outputs:
+  SplunkURL:
+    Value: !Sub http://${Splunk.PublicDnsName}:8000
+    Description: Splunk URL
+  SplunkInternalIP:
+    Value: !GetAtt Splunk.PrivateIp
+    Description: Splunk private IP address

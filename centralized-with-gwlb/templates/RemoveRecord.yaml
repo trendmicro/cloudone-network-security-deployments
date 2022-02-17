@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  # ------------------------------------------------------------#
+  # Import Master.yaml template
+  # ------------------------------------------------------------#
+  HostZoneID:
+    Description: Enter the ID of the HostZone where the domain you want to use is registered
+    Type: String
+
+Resources:
+  RemoveRecordLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: 
+        Fn::Join:
+          - ""
+          - - Fn::Select:
+              - 2
+              - Fn::Split:
+                - "-"
+                - !Ref AWS::StackName
+            - "-RemoveRecordLambdaRole"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref RemoveRecordLambdaPolicy
+
+  RemoveRecordLambdaPolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName: 
+        Fn::Join:
+          - ""
+          - - Fn::Select:
+              - 2
+              - Fn::Split:
+                - "-"
+                - !Ref AWS::StackName
+            - "-RemoveRecordLambdaPolicy"
+      Path: /
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - route53:ChangeResourceRecordSets
+              - route53:ListResourceRecordSets
+            Resource: "*"
+            Effect: Allow
+
+  RemoveRecordLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json, boto3, logging
+          import cfnresponse
+          import os
+          from datetime import datetime
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          HostedZoneId = os.environ.get('HostedZoneId')
+          client = boto3.client('route53')
+
+          def lambda_handler(event, context):
+            logger.info("event: {}".format(event))
+            try:
+              if event['RequestType'] == 'Delete':
+                response = client.list_resource_record_sets(
+                  HostedZoneId=HostedZoneId,
+                )
+                for i in range(len(response['ResourceRecordSets'])):
+                  if "CNAME" == response['ResourceRecordSets'][i]['Type']:
+                    name = response['ResourceRecordSets'][i]['Name']
+                    ttl = response['ResourceRecordSets'][i]['TTL']
+                    value = response['ResourceRecordSets'][i]['ResourceRecords'][0]['Value']
+                    client.change_resource_record_sets(
+                      HostedZoneId=HostedZoneId,
+                      ChangeBatch={
+                        'Changes': [
+                          {
+                            'Action': 'DELETE',
+                            'ResourceRecordSet': {
+                              'Name': name,
+                              'Type': 'CNAME',
+                              'TTL' : ttl,
+                              'ResourceRecords': [
+                                {
+                                  'Value': value
+                                },
+                              ]
+                            }
+                          }
+                        ]
+                      }
+                    )
+              sendResponseCfn(event, context, cfnresponse.SUCCESS)
+            except Exception as e:
+              logger.info("Exception: {}".format(e))
+              sendResponseCfn(event, context, cfnresponse.FAILED)
+
+          def sendResponseCfn(event, context, responseStatus):
+            responseData = {}
+            responseData['Data'] = {}
+            cfnresponse.send(event, context, responseStatus, responseData, "CustomResourcePhysicalID")            
+      Role: !GetAtt RemoveRecordLambdaRole.Arn
+      Environment: 
+        Variables: 
+          HostedZoneId: !Ref HostZoneID
+      FunctionName: 
+        Fn::Join:
+          - ""
+          - - Fn::Select:
+              - 3
+              - Fn::Split:
+                - "-"
+                - !Ref AWS::StackName
+            - "-RemoveRecord-Function"
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Runtime: python3.7
+      Timeout: 300
+
+  RemoveRecord:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt RemoveRecordLambdaFunction.Arn

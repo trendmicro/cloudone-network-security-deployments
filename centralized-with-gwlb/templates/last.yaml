@@ -1,0 +1,419 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  # ------------------------------------------------------------#
+  # Import Master.yaml template
+  # ------------------------------------------------------------#
+  AvailabilityZones:
+    Description: 'List of Availability Zones to use for the subnets in the VPC. Select the AZ to deploy GWLB Endpoint. Note:
+      The logical order is preserved.'
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+  PublicSubnet1CIDR:
+    Description: Enter the Public Subnet CIDR to deploy the GWLBE, CIDR block for the public DMZ subnet 1 located in Availability Zone
+      1
+    Type: String
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.201.0/24
+  PublicSubnet2CIDR:
+    Description: Enter the Public Subnet CIDR to deploy the GWLBE, CIDR block for the public DMZ subnet 2 located in Availability Zone
+      2
+    Type: String
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.202.0/24
+  PublicSubnetTag1:
+    Description: tag to add to public subnets, in format Key=Value (Optional)
+    Type: String
+    AllowedPattern: ^([a-zA-Z0-9+\-._:/@]+=[a-zA-Z0-9+\-.,_:/@ *\\"'\[\]\{\}]*)?$
+    ConstraintDescription: tags must be in format "Key=Value" keys can only contain
+      [a-zA-Z0-9+\-._:/@], values can contain [a-zA-Z0-9+\-._:/@ *\\"'\[\]\{\}]
+    Default: Network=Public
+  PublicSubnetTag2:
+    Description: tag to add to public subnets, in format Key=Value (Optional)
+    Type: String
+    AllowedPattern: ^([a-zA-Z0-9+\-._:/@]+=[a-zA-Z0-9+\-.,_:/@ *\\"'\[\]\{\}]*)?$
+    ConstraintDescription: tags must be in format "Key=Value" keys can only contain
+      [a-zA-Z0-9+\-._:/@], values can contain [a-zA-Z0-9+\-._:/@ *\\"'\[\]\{\}]
+    Default: ''
+  PublicSubnetTag3:
+    Description: tag to add to public subnets, in format Key=Value (Optional)
+    Type: String
+    AllowedPattern: ^([a-zA-Z0-9+\-._:/@]+=[a-zA-Z0-9+\-.,_:/@ *\\"'\[\]\{\}]*)?$
+    ConstraintDescription: tags must be in format "Key=Value" keys can only contain
+      [a-zA-Z0-9+\-._:/@], values can contain [a-zA-Z0-9+\-._:/@ *\\"'\[\]\{\}]
+    Default: ''
+  # ------------------------------------------------------------#
+  # Import BaseVPC stack(aws-vpc.template.yaml file)
+  # ------------------------------------------------------------#
+  VPC:
+    Description: Enter the VPC ID where you want to deploy the GWLB Endpoint
+    Type: String
+  InternetGateway:
+    Description: IGW ID of the VPC where the GWLBE is deployed
+    Type: String
+  BasePublicSubnet1CIDR:
+    Description: Enter the Public Subnet CIDR that was originally deployed
+    Type: String
+  BasePublicSubnet2CIDR:
+    Description: Enter the Public Subnet CIDR that was originally deployed
+    Type: String
+  BasePublicSubnet1RouteTable:
+    Description: Enter the Public Subnet Route Table ID that was originally deployed
+    Type: String
+  BasePublicSubnet2RouteTable:
+    Description: Enter the Public Subnet Route Table ID that was originally deployed
+    Type: String
+  # ------------------------------------------------------------#
+  # Import c1nsSecurityVPCTemplate stack(security_vpc.yml file)
+  # ------------------------------------------------------------#
+  VPCEndpointServiceName:
+    Description: VPC Endpoint Service Name
+    Type: String
+
+# ------------------------------------------------------------#
+# Conditions
+# ------------------------------------------------------------#
+Conditions:
+  PublicSubnetTag1Condition: !Not
+    - !Equals
+      - !Ref 'PublicSubnetTag1'
+      - ''
+  PublicSubnetTag2Condition: !Not
+    - !Equals
+      - !Ref 'PublicSubnetTag2'
+      - ''
+  PublicSubnetTag3Condition: !Not
+    - !Equals
+      - !Ref 'PublicSubnetTag3'
+      - ''
+
+Resources:
+  # ------------------------------------------------------------#
+  # Create Public Subnet for GWLB Endpoint
+  # ------------------------------------------------------------#
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1CIDR
+      AvailabilityZone: !Select
+        - 0
+        - !Ref AvailabilityZones
+      Tags:
+        - Key: Name
+          Value: Public subnet 1
+        - !If
+          - PublicSubnetTag1Condition
+          - Key: !Select
+              - 0
+              - !Split
+                - '='
+                - !Ref PublicSubnetTag1
+            Value: !Select
+              - 1
+              - !Split
+                - '='
+                - !Ref PublicSubnetTag1
+          - !Ref AWS::NoValue
+        - !If
+          - PublicSubnetTag2Condition
+          - Key: !Select
+              - 0
+              - !Split
+                - '='
+                - !Ref PublicSubnetTag2
+            Value: !Select
+              - 1
+              - !Split
+                - '='
+                - !Ref PublicSubnetTag2
+          - !Ref AWS::NoValue
+        - !If
+          - PublicSubnetTag3Condition
+          - Key: !Select
+              - 0
+              - !Split
+                - '='
+                - !Ref PublicSubnetTag3
+            Value: !Select
+              - 1
+              - !Split
+                - '='
+                - !Ref PublicSubnetTag3
+          - !Ref AWS::NoValue
+      MapPublicIpOnLaunch: true
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2CIDR
+      AvailabilityZone: !Select
+        - 1
+        - !Ref AvailabilityZones
+      Tags:
+        - Key: Name
+          Value: Public subnet 2
+        - !If
+          - PublicSubnetTag1Condition
+          - Key: !Select
+              - 0
+              - !Split
+                - '='
+                - !Ref PublicSubnetTag1
+            Value: !Select
+              - 1
+              - !Split
+                - '='
+                - !Ref PublicSubnetTag1
+          - !Ref AWS::NoValue
+        - !If
+          - PublicSubnetTag2Condition
+          - Key: !Select
+              - 0
+              - !Split
+                - '='
+                - !Ref PublicSubnetTag2
+            Value: !Select
+              - 1
+              - !Split
+                - '='
+                - !Ref PublicSubnetTag2
+          - !Ref AWS::NoValue
+        - !If
+          - PublicSubnetTag3Condition
+          - Key: !Select
+              - 0
+              - !Split
+                - '='
+                - !Ref PublicSubnetTag3
+            Value: !Select
+              - 1
+              - !Split
+                - '='
+                - !Ref PublicSubnetTag3
+          - !Ref AWS::NoValue
+      MapPublicIpOnLaunch: true
+
+  # ------------------------------------------------------------#
+  # Create Route table to attach to the Public Subnet for GWLB Endpoint
+  # ------------------------------------------------------------#
+  PublicSubnet1RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: ForPublicSubnet1RouteTable
+  PublicSubnet1Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicSubnet1RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicSubnet1RouteTable
+
+  PublicSubnet2RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: ForPublicSubnet2RouteTable
+  PublicSubnet2Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicSubnet2RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicSubnet2RouteTable
+
+  # ------------------------------------------------------------#
+  # Create GWLB Endpoint
+  # ------------------------------------------------------------#
+  GWLBEndopoint1:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Ref VPCEndpointServiceName
+      SubnetIds:
+        - !Ref PublicSubnet1
+      VpcEndpointType: GatewayLoadBalancer
+      VpcId: !Ref VPC
+
+  GWLBEndopoint2:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Ref VPCEndpointServiceName
+      SubnetIds:
+        - !Ref PublicSubnet2
+      VpcEndpointType: GatewayLoadBalancer
+      VpcId: !Ref VPC
+
+  # ------------------------------------------------------------#
+  # Create VPC Ingress Routing
+  # ------------------------------------------------------------#
+  VIRRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: ForVIRRouteTable
+  VIR1Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref VIRRouteTable
+      DestinationCidrBlock: !Ref BasePublicSubnet1CIDR
+      VpcEndpointId: !Ref GWLBEndopoint1
+
+  VIR2Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref VIRRouteTable
+      DestinationCidrBlock: !Ref BasePublicSubnet2CIDR
+      VpcEndpointId: !Ref GWLBEndopoint2
+
+  VIR:
+    Type: AWS::EC2::GatewayRouteTableAssociation
+    Properties:
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref VIRRouteTable
+
+  # ------------------------------------------------------------#
+  # Create Lambda for modify base route table
+  # ------------------------------------------------------------#
+  ModifyRouteTableLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/"
+      RoleName: 
+        Fn::Join:
+          - ""
+          - - Fn::Select:
+              - 2
+              - Fn::Split:
+                - "-"
+                - !Ref AWS::StackName
+            - "-ModifyRouteTableLambdaRole"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref ModifyRouteTableLambdaPolicy
+
+  ModifyRouteTableLambdaPolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName: 
+        Fn::Join:
+          - ""
+          - - Fn::Select:
+              - 2
+              - Fn::Split:
+                - "-"
+                - !Ref AWS::StackName
+            - "-ModifyRouteTableLambdaPolicy"
+      Path: /
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - ec2:ReplaceRoute
+            Resource: "*"
+            Effect: Allow
+
+  ModifyRouteTableLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json, boto3, logging
+          import cfnresponse
+          import os
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          destination_cidr_block = "0.0.0.0/0"
+
+          igw = os.getenv('IGW')
+          route_table_id1 = os.getenv('RT1')
+          VpcEndpointId1 = os.getenv('GWLBE1')
+          route_table_id2 = os.getenv('RT2')
+          VpcEndpointId2 = os.getenv('GWLBE2')
+          ec2 = boto3.resource('ec2')
+          route1 = ec2.Route(route_table_id1,destination_cidr_block)
+          route2 = ec2.Route(route_table_id2,destination_cidr_block)
+
+          def lambda_handler(event, context):
+            logger.info("event: {}".format(event))
+            status = cfnresponse.SUCCESS
+            try:
+              if event['RequestType'] == 'Create':
+                route1.replace(
+                    VpcEndpointId=VpcEndpointId1
+                )
+                route2.replace(
+                    VpcEndpointId=VpcEndpointId2
+                )
+              if event['RequestType'] == 'Delete':
+                route1.replace(
+                    GatewayId=igw
+                )
+                route2.replace(
+                    GatewayId=igw
+                )
+            except Exception:
+              logger.error('Unhandled exception', exc_info=True)
+              status = cfnresponse.FAILED
+            finally:
+              cfnresponse.send(event, context, status, {}, None)
+      Role: !GetAtt ModifyRouteTableLambdaRole.Arn
+      Environment: 
+        Variables: 
+          IGW: !Ref InternetGateway
+          RT1: !Ref BasePublicSubnet1RouteTable
+          GWLBE1: !Ref GWLBEndopoint1
+          RT2: !Ref BasePublicSubnet2RouteTable
+          GWLBE2: !Ref GWLBEndopoint2
+      FunctionName: 
+        Fn::Join:
+          - ""
+          - - Fn::Select:
+              - 2
+              - Fn::Split:
+                - "-"
+                - !Ref AWS::StackName
+            - "-ModifyRouteTable-Function"
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Runtime: python3.7
+      Timeout: 300
+
+  ModifyRouteTable:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt ModifyRouteTableLambdaFunction.Arn
+
+Outputs:
+  PublicSubnet1Route:
+    Description: ID of Public Subnet 1 Route Table
+    Value: !Ref PublicSubnet1RouteTable
+  PublicSubnet1ID:
+    Description: ID of Public Subnet 1
+    Value: !Ref PublicSubnet1

@@ -1,0 +1,546 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Mappings:
+  RegionMap:
+    ap-northeast-1:
+      ImageId: "ami-05f01a6a414be9808"
+      HostedId: "Z1YSHQZHG15GKL"
+    ap-northeast-2:
+      ImageId: "ami-06835923fab139b98"
+      HostedId: "Z20JF4UZKIW1U8"
+    ap-northeast-3:
+      ImageId: "ami-081eaee471c0e1518"
+      HostedId: "Z5LXEXXYW11ES"
+    us-east-2:
+      ImageId: "ami-0233c2d874b811deb"
+      HostedId: "ZOJJZC49E0EPZ"
+    us-east-1:
+      ImageId: "ami-0dc2d3e4c0f9ebd18"
+      HostedId: "Z1UJRXOUMOOFQ8"
+    us-west-1:
+      ImageId: "ami-0ed05376b59b90e46"
+      HostedId: "Z2MUQ32089INYE"
+    us-west-2:
+      ImageId: "ami-0dc8f589abe99f538"
+      HostedId: "Z2OJLYMUO9EFXC"
+    ap-south-1:
+      ImageId: "ami-00bf4ae5a7909786c"
+      HostedId: "Z3VO1THU9YC4UR"
+    ap-southeast-1:
+      ImageId: "ami-0e5182fad1edfaa68"
+      HostedId: "ZL327KTPIQFUL"
+    ap-southeast-2:
+      ImageId: "ami-0c9fe0dec6325a30c"
+      HostedId: "Z2RPCDW04V8134"
+    ca-central-1:
+      ImageId: "ami-0db72f413fc1ddb2a"
+      HostedId: "Z19DQILCV0OWEC"
+    eu-central-1:
+      ImageId: "ami-00f22f6155d6d92c5"
+      HostedId: "Z1U9ULNL0V5AJ3"
+    eu-west-1:
+      ImageId: "ami-058b1b7fe545997ae"
+      HostedId: "ZLY8HYME6SFDD"
+    eu-west-2:
+      ImageId: "ami-03ac5a9b225e99b02"
+      HostedId: "ZJ5UAJN8Y3Z2Q"
+    eu-west-3:
+      ImageId: "ami-062fdd189639d3e93"
+      HostedId: "Z3KY65QIEKYHQQ"
+    eu-north-1:
+      ImageId: "ami-00517306b63c4628c"
+      HostedId: "Z3UWIKFBOOGXPP"
+    sa-east-1:
+      ImageId: "ami-0f8243a5175208e08"
+      HostedId: "ZCMLWB8V5SYIT"
+    # ap-east-1:
+    #   HostedId: "Z3FD1VL90ND7K5"
+    # me-south-1:
+    #   HostedId: "Z20ZBPC0SS8806"
+
+  NSVAAMIRegionMap:
+  # IPS_AMI--2021.7.0.11129
+    us-east-1:
+      ImageId: ami-0c55b11b8c1850074
+    us-east-2:
+      ImageId: ami-049ac6c43ccc0eb59
+    us-west-1:
+      ImageId: ami-0c61fb7ad31615bc9
+    us-west-2:
+      ImageId: ami-0abee844f98a90719
+    af-south1:
+      ImageId: ami-07beb2f931b25bac4
+    ap-east-1:
+      ImageId: ami-0eef4c54b43719b15
+    ap-south-1:
+      ImageId: ami-0bb4faee68f7cbd25
+    ap-northeast-2:
+      ImageId: ami-06835923fab139b98
+    ap-northeast-1:
+      ImageId: ami-05f01a6a414be9808
+    ap-southeast-1:
+      ImageId: ami-08c9d7bc95ea77e79
+    ap-southeast-2:
+      ImageId: ami-095df8b8ec0e0aac5
+    ca-central-1:
+      ImageId: ami-0c1c1a2c0b54eea1e
+    eu-north-1:
+      ImageId: ami-0c3ba132507949f56
+    eu-west-3:
+      ImageId: ami-02c47030c3e886b4f
+    eu-west-2:
+      ImageId: ami-062e147780edfffc4
+    eu-west-1:
+      ImageId: ami-0c0a077459b3222d9
+    eu-central-1:
+      ImageId: ami-039d4a40e711415db
+    eu-south-1:
+      ImageId: ami-001fe5ed24c292c15
+    me-south-1:
+      ImageId: ami-036c40a2988da6da7
+    sa-east-1:
+      ImageId: ami-0edc19454ec876784
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - 
+        Label:
+          default: Required parameters
+        Parameters:
+          - AllowIP
+          - BucketName
+          - BucketPrefix
+          - BucketRegion
+          - DVWAInstanceType
+          - sshKeyPairName
+          - SSMAccess
+          - DeployHTTPS
+          - DeployC1NS
+          - DeployC1NSHA
+          - DeploySplunk
+      - 
+        Label:
+          default: If you set the DeployHTTPS parameter to true, the following parameters are required
+        Parameters:
+          - DomainName
+          - SubDomain
+          - HostZoneID
+      - 
+        Label:
+          default: If you set the DeployC1NS parameter to true, the following parameters are required
+        Parameters:
+          - CloudOneAPIKEY
+          - InstanceType
+          - SecurityVPCCIDR
+          - NsvaCountPerAz
+          - EnableInspectionLogs
+      - 
+        Label:
+          default: If you set the DeploySplunk parameter to true, the following parameters are required
+        Parameters:
+          - SyslogPort
+          - SplunkPassword
+          - SplunkVersion
+
+Parameters:
+  # ------------------------------------------------------------#
+  # Required parameters
+  # ------------------------------------------------------------#
+  AllowIP:
+    Description: Enter the global IP of the terminal to be tested
+    Type: String
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: "Must be a valid IP range of the form x.x.x.x/x"
+    Default: '127.0.0.1/32'
+  BucketName:
+    Description: Name of the bucket where the template is placed
+    Type: String
+    Default: 'quickstart-network-security'
+  BucketPrefix:
+    Description: Bucket prefix
+    Type: String
+    Default: 'centralized-with-gwlb/'
+  BucketRegion:
+    Description: Bucket region
+    Type: String
+    Default: 'us-west-1'
+  DVWAInstanceType:
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+    Default: t3.micro
+    Description: "Amazon EC2 instance type for the DVWA instances. Damn Vulnerable Web
+      Application (DVWA) hosts are machines placed in the public subnet which are PHP/MySQL Web App and are vulnerable.
+      This allows security professionals to test Network Security in a legal
+      environment. For more information visit: https://dvwa.co.uk/"
+    Type: String
+  sshKeyPairName:
+    Description: SSH Key of the EC2 you are using
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair
+  SSMAccess:
+    Description: If enabled, SSM access to the instance will be available.
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+  DeployHTTPS:
+    Description: If enabled, The HTTPS site will be deployed.
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+  DeployC1NS:
+    Description: If enabled, C1NS with be deployed in centralized Security VPC
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+  DeployC1NSHA:
+    Description: "[Required: 'DeployC1NS' must be set to true] If enabled, C1NS HA deployed."
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+  DeploySplunk:
+    Description: "[Required: 'DeployC1NS' must be set to true] If enabled, Splunk Server will be deployed."
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+  # ------------------------------------------------------------#
+  # If you set the DeployHTTPS parameter to true, the following parameters are required
+  # ------------------------------------------------------------#
+  DomainName:
+    Description: Domain name to be used for the website.
+    Type: String
+    Default: ''
+  SubDomain:
+    Description: Subdomain to be used for the ALB.
+    Type: String
+    Default: ''
+  HostZoneID:
+    Description: ID of the HostZone where the domain you want to use is registered.
+    Type: String
+    Default: ''
+  # ------------------------------------------------------------#
+  # If you set the DeployC1NS parameter to true, the following parameters are required
+  # ------------------------------------------------------------#
+  CloudOneAPIKEY:
+    Description: Trend Micro Cloud One API key you want to use.
+    Type: String
+    NoEcho: true
+  InstanceType:
+    Description: Instance type of NSVA
+    Type: String
+    AllowedValues:
+      - c5.9xlarge
+      - c5.4xlarge
+      - c5.2xlarge
+      - c5n.9xlarge
+      - c5n.4xlarge
+      - c5n.2xlarge
+    Default: c5n.2xlarge
+  SecurityVPCCIDR:
+    Description: CIDR of the VPC where you want to deploy the NSVA.
+    Type: String
+    AllowedPattern: "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-6]))$"
+    ConstraintDescription: "CIDR block parameter must be in the form x.x.x.x/16-26"
+    Default: "10.10.10.0/16"
+  NsvaCountPerAz:
+    Description: Number of NSVA instances to be deployed in the AZ.
+    Type: Number
+    AllowedValues:
+      - 1
+      - 2
+      - 3
+      - 4
+    Default: 1
+  EnableInspectionLogs:
+    Description: If enabled, NSVA Inspection Logs will be published to CloudWatch log group "network_security_logs".
+    Type: String
+    AllowedValues: [ true, false ]
+    Default: false
+  # ------------------------------------------------------------#
+  # If you set the DeploySplunk parameter to true, the following parameters are required
+  # ------------------------------------------------------------#
+  SyslogPort:
+    Description: Port number used by Splunk Server
+    Type: String
+    Default: '5140'
+  SplunkPassword:
+    Description: Password used by Splunk Server
+    Type: String
+    NoEcho: true
+    Default: ''
+  SplunkVersion:
+    Description: Splunk Version
+    Type: String
+    Default: '8.2'
+
+# ------------------------------------------------------------#
+# Conditions
+# ------------------------------------------------------------#
+Conditions:
+  DeployHTTPS:
+    !Equals [true, !Ref DeployHTTPS]
+  DeployC1NS:
+    !Equals [true, !Ref DeployC1NS]
+  DeployC1NSHAmodel:
+    !Equals [true, !Ref DeployC1NSHA]
+  DeployC1NSHA: !And
+    - !Condition DeployC1NS
+    - !Condition DeployC1NSHAmodel
+  DeploySplunksrv:
+    !Equals [true, !Ref DeploySplunk]
+  DeploySplunk: !And
+    - !Condition DeployC1NS
+    - !Condition DeploySplunksrv
+
+Resources:
+  # ------------------------------------------------------------#
+  # Create Base VPC (VPC, IGW, Subnet, RouteTable, EIP, NatGW)
+  # ------------------------------------------------------------#
+  BaseVPC:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${BucketName}.s3.${BucketRegion}.amazonaws.com/${BucketPrefix}templates/aws-vpc.template.yaml
+      Parameters:
+        NumberOfAZs: 2
+        AvailabilityZones:
+          Fn::Join:
+            - ","
+            - - Fn::Select: 
+                - 0
+                - Fn::GetAZs: !Ref AWS::Region
+              - Fn::Select: 
+                - 1
+                - Fn::GetAZs: !Ref AWS::Region
+
+  # ------------------------------------------------------------#
+  # Create DVWA (DVWA Instance)
+  # ------------------------------------------------------------#
+  DVWA:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${BucketName}.s3.${BucketRegion}.amazonaws.com/${BucketPrefix}templates/dvwa.yaml
+      Parameters:
+        DVWAInstanceType: !Ref DVWAInstanceType
+        KeyPairName: !Ref sshKeyPairName
+        PublicSubnet1ID: !GetAtt BaseVPC.Outputs.PublicSubnet1ID
+        QSS3BucketName: !Ref BucketName
+        QSS3KeyPrefix: !Ref BucketPrefix
+        DVWARemoteAccessCIDR: !Ref AllowIP
+        QSS3BucketRegion: !Ref BucketRegion
+        VPCID: !GetAtt BaseVPC.Outputs.VPCID
+
+  # ------------------------------------------------------------#
+  # Create Base Site (EC2, SecurityGroup)
+  # ------------------------------------------------------------#
+  BaseSite:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${BucketName}.s3.${BucketRegion}.amazonaws.com/${BucketPrefix}templates/BaseSite.yaml
+      Parameters:
+        ImageId: !FindInMap
+          - RegionMap
+          - !Ref 'AWS::Region'
+          - ImageId
+        AllowIP: !Ref AllowIP
+        NeedSSMAccess: !Ref SSMAccess
+        VPCId: !GetAtt BaseVPC.Outputs.VPCID
+        PrivateSubnet1ID: !GetAtt BaseVPC.Outputs.PrivateSubnet1AID
+        PublicSubnet1ID: !GetAtt BaseVPC.Outputs.PublicSubnet1ID
+        PublicSubnet2ID: !GetAtt BaseVPC.Outputs.PublicSubnet2ID
+
+  # ------------------------------------------------------------#
+  # Create LoadBalancer and https site (ALB, TargetGroup, Listener, ACM)
+  # ------------------------------------------------------------#
+  AddALB:
+    Condition: DeployHTTPS
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${BucketName}.s3.${BucketRegion}.amazonaws.com/${BucketPrefix}templates/AddALB.yaml
+      Parameters:
+        DomainName: !Ref DomainName
+        SubDomain: !Ref SubDomain
+        HostZoneID: !Ref HostZoneID
+        TargetGroupID: !GetAtt BaseSite.Outputs.TargetGroupID
+        ALBID: !GetAtt BaseSite.Outputs.ALBID
+        HostedZoneId: !GetAtt BaseSite.Outputs.HostedZoneId
+        DNSName: !GetAtt BaseSite.Outputs.HTTPWebSiteURL
+
+  # ------------------------------------------------------------#
+  # Create RemoveRecord Function
+  # ------------------------------------------------------------#
+  RemoveRecord:
+    Condition: DeployHTTPS
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${BucketName}.s3.${BucketRegion}.amazonaws.com/${BucketPrefix}templates/RemoveRecord.yaml
+      Parameters:
+        HostZoneID: !Ref HostZoneID
+
+  # ------------------------------------------------------------#
+  # Create c1ns macro template
+  # ------------------------------------------------------------#
+  c1nsMacroTemplate:
+    Condition: DeployC1NS
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://trendmicro-tippingpoint.s3.amazonaws.com/documentation/templates/macro.yml
+
+  # ------------------------------------------------------------#
+  # Create c1ns security vpc template
+  # ------------------------------------------------------------#
+  c1nsSecurityVPCTemplate:
+    Condition: DeployC1NS
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://trendmicro-tippingpoint.s3.amazonaws.com/documentation/templates/security_vpc_legacy.yaml
+      Parameters:
+        sshKeyPairName: !Ref sshKeyPairName
+        CloudOneAPIKEY: !Ref CloudOneAPIKEY
+        NSVAAMI: !FindInMap
+          - NSVAAMIRegionMap
+          - !Ref 'AWS::Region'
+          - ImageId
+        InstanceType: !Ref InstanceType
+        AvailabilityZones:
+          Fn::Join:
+            - ","
+            - - Fn::Select: 
+                - 0
+                - Fn::GetAZs: !Ref AWS::Region
+              - Fn::Select: 
+                - 1
+                - Fn::GetAZs: !Ref AWS::Region
+        SecurityVPCCIDR: !Ref SecurityVPCCIDR
+        NsvaCountPerAz: !Ref NsvaCountPerAz
+        EnableInspectionLogs: !Ref EnableInspectionLogs
+    DependsOn: c1nsMacroTemplate
+
+  # ------------------------------------------------------------#
+  # Create the IAM role stack for cross-account deployments 
+  # ------------------------------------------------------------#
+  CrossAccountIAMTemplate:
+    Condition: DeployC1NSHA
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://trendmicro-tippingpoint.s3.amazonaws.com/documentation/templates/ha_lambda_cross_account_iam.yaml
+      Parameters:
+        SecurityVpcAccountId: !Ref "AWS::AccountId"
+        ExternalId: !GetAtt c1nsSecurityVPCTemplate.Outputs.ExternalId
+    DependsOn: ModifyRTTemplate
+
+  # ------------------------------------------------------------#
+  # Create HA stack deployments
+  # ------------------------------------------------------------#
+  HaLambdaTemplate:
+    Condition: DeployC1NSHA
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://trendmicro-tippingpoint.s3.amazonaws.com/documentation/templates/ha_resources_vpc_ingress.yaml
+      Parameters:
+        securityVpcStackName: 
+          Fn::Select:
+            - 1
+            - Fn::Split:
+              - /
+              - !Ref c1nsSecurityVPCTemplate
+    DependsOn: CrossAccountIAMTemplate
+
+  # ------------------------------------------------------------#
+  # Create Last modify setting template (modify route table)
+  # ------------------------------------------------------------#
+  ModifyRTTemplate:
+    Condition: DeployC1NS
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${BucketName}.s3.${BucketRegion}.amazonaws.com/${BucketPrefix}templates/last.yaml
+      Parameters:
+        VPC: !GetAtt BaseVPC.Outputs.VPCID
+        InternetGateway: !GetAtt BaseVPC.Outputs.IGWID
+        BasePublicSubnet1CIDR: !GetAtt BaseVPC.Outputs.PublicSubnet1CIDR
+        BasePublicSubnet2CIDR: !GetAtt BaseVPC.Outputs.PublicSubnet2CIDR
+        BasePublicSubnet1RouteTable: !GetAtt BaseVPC.Outputs.PublicSubnet1RouteTable
+        BasePublicSubnet2RouteTable: !GetAtt BaseVPC.Outputs.PublicSubnet2RouteTable
+        VPCEndpointServiceName: !GetAtt c1nsSecurityVPCTemplate.Outputs.VPCEndpointServiceName
+        AvailabilityZones:
+          Fn::Join:
+            - ","
+            - - Fn::Select: 
+                - 0
+                - Fn::GetAZs: !Ref AWS::Region
+              - Fn::Select: 
+                - 1
+                - Fn::GetAZs: !Ref AWS::Region
+
+  # ------------------------------------------------------------#
+  # Create Splunk Server
+  # ------------------------------------------------------------#
+  SplunkTemplate:
+    Condition: DeploySplunk
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${BucketName}.s3.${BucketRegion}.amazonaws.com/${BucketPrefix}templates/splunk.yaml
+      Parameters:
+        VPCID: !GetAtt BaseVPC.Outputs.VPCID
+        VPCCIDR: !GetAtt BaseVPC.Outputs.VPCCIDR
+        RTID: !GetAtt ModifyRTTemplate.Outputs.PublicSubnet1Route
+        AllowIP: !Ref AllowIP
+        SyslogPort: !Ref SyslogPort
+        SecurityVPCCIDR: !Ref SecurityVPCCIDR
+        ImageId: !FindInMap
+          - RegionMap
+          - !Ref 'AWS::Region'
+          - ImageId
+        PublicSubnet1ID: !GetAtt ModifyRTTemplate.Outputs.PublicSubnet1ID
+        SplunkPassword: !Ref SplunkPassword
+        SplunkVersion: !Ref SplunkVersion
+        c1nsStackName: 
+          Fn::Select:
+            - 1
+            - Fn::Split:
+              - /
+              - !Ref c1nsSecurityVPCTemplate
+        InstanceProfile: !GetAtt BaseSite.Outputs.InstanceProfile
+        NeedSSMAccess: !Ref SSMAccess
+
+# ------------------------------------------------------------#
+# Output Site URLs
+# ------------------------------------------------------------#
+Outputs:
+  HTTPWebSiteURL:
+    Value: !GetAtt BaseSite.Outputs.HTTPWebSiteURL
+    Description: HTTP site URL
+  HTTPSWebSiteURL:
+    Condition: DeployHTTPS
+    Value: !GetAtt AddALB.Outputs.HTTPSWebSiteURL
+    Description: HTTPS site URL
+  SplunkURL:
+    Condition: DeploySplunk
+    Value: !GetAtt SplunkTemplate.Outputs.SplunkURL
+    Description: Splunk URL
+  SplunkInternalIP:
+    Condition: DeploySplunk
+    Value: !GetAtt SplunkTemplate.Outputs.SplunkInternalIP
+    Description: Splunk private IP address  
+  DVWAIP:
+    Value: !GetAtt DVWA.Outputs.DVWAPublicIP
+    Description: DVWA instance Public IP 
+  DVWADeployment:
+    Value: !GetAtt DVWA.Outputs.Postdeployment
+    Description: See the deployment guide for post-deployment steps 

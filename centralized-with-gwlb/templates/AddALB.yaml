@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  # ------------------------------------------------------------#
+  # Import Master.yaml template
+  # ------------------------------------------------------------#
+  DomainName:
+    Description: Enter the domain name to be used for the website
+    Type: String
+  SubDomain:
+    Description: Enter the subdomain to be used for the ALB
+    Type: String
+  HostZoneID:
+    Description: Enter the ID of the HostZone where the domain you want to use is registered
+    Type: String
+  # ------------------------------------------------------------#
+  # Import BaseSite stack(BaseSite.yaml file)
+  # ------------------------------------------------------------#
+  TargetGroupID:
+    Description: Target group ID of ALB
+    Type: String
+  ALBID:
+    Description: ID of ALB
+    Type: String
+  HostedZoneId:
+    Description: Hosted Zone ID of ALB
+    Type: String
+  DNSName:
+    Description: DNS Name of ALB
+    Type: String
+
+Resources:
+  # ------------------------------------------------------------#
+  # resource to make your website HTTPS, Create HTTPS Listener, ACM and Route53 record
+  # ------------------------------------------------------------#
+  ALBListenerHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref ACM
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroupID
+          Type: forward
+      LoadBalancerArn: !Ref ALBID
+  ACM:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub ${SubDomain}.${DomainName}
+      DomainValidationOptions:
+        - DomainName: !Sub ${SubDomain}.${DomainName}
+          HostedZoneId: !Ref HostZoneID
+      ValidationMethod: DNS
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostZoneID
+      Comment: DNS for ALB
+      Name: !Sub ${SubDomain}.${DomainName}
+      Type: A
+      AliasTarget:
+        HostedZoneId: !Ref HostedZoneId
+        DNSName: !Ref DNSName
+
+Outputs:
+  HTTPSWebSiteURL:
+    Value: !Sub https://${SubDomain}.${DomainName}
+    Description: URL to access the web server (HTTPS)

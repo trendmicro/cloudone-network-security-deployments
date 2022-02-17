@@ -1,0 +1,198 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: DVWA Server with MySql DB
+Metadata:
+  QuickStartDocumentation:
+    EntrypointName: Launch into an existing VPC
+    Order: 2
+  LICENSE: Apache License, Version 2.0
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Network configuration
+        Parameters:
+          - VPCID
+          - PublicSubnet1ID
+          - DVWARemoteAccessCIDR
+      - Label:
+          default: Amazon EC2 configuration
+        Parameters:
+          - KeyPairName
+          - DVWAInstanceType
+          - RootVolumeSize
+      - Label:
+          default: AWS Quick Start configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+          - QSS3BucketRegion
+    ParameterLabels:
+      QSS3BucketRegion:
+        default: Quick Start S3 bucket region
+      DVWAInstanceType:
+        default: DVWA instance type
+      KeyPairName:
+        default: Key pair name
+      PublicSubnet1ID:
+        default: Public subnet 1 ID
+      QSS3BucketName:
+        default: Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: Quick Start S3 key prefix
+      DVWARemoteAccessCIDR:
+        default: Allowed DVWA external access CIDR
+      VPCID:
+        default: VPC ID
+      RootVolumeSize:
+        default: Root volume size
+  cfn-lint: { config: { ignore_checks: [E9007] } }
+Parameters:
+  DVWAInstanceType:
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+    Default: t2.micro
+    Description: Amazon EC2 instance type for the DVWA instances.
+    Type: String
+  KeyPairName:
+    Description: Name of an existing public/private key pair. If you do not have one in this AWS Region,
+      please create it before continuing.
+    Type: 'AWS::EC2::KeyPair::KeyName'
+  PublicSubnet1ID:
+    Description: ID of the public subnet 1 that you want to provision the first DVWA into (e.g., subnet-a0246dcd).
+    Type: 'AWS::EC2::Subnet::Id'
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: The Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a 
+      hyphen (-).
+    Default: quickstart-network-security
+    Description: Name of the S3 bucket for your copy of the Quick Start assets. 
+      Keep the default name unless you are customizing the template. 
+      Changing the name updates code references to point to a new Quick 
+      Start location. This name can include numbers, lowercase letters, 
+      uppercase letters, and hyphens, but do not start or end with a hyphen (-). 
+      See https://quickstart-network-security.github.io/option1.html.
+    Type: String
+  QSS3BucketRegion:
+    Default: 'us-west-1'
+    Description: The AWS Region where the Quick Start S3 bucket (QSS3BucketName) is hosted. When using your own bucket, you must specify this value.
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^([0-9a-zA-Z-.]+/)*$
+    ConstraintDescription: The Quick Start S3 key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slashes (/).
+    Default: edge-deployment/
+    Description: S3 key prefix that is used to simulate a directory for your copy of the 
+      Quick Start assets. Keep the default prefix unless you are customizing 
+      the template. Changing this prefix updates code references to point to 
+      a new Quick Start location. This prefix can include numbers, lowercase 
+      letters, uppercase letters, hyphens (-), and forward slashes (/). End with a forward slash. 
+      See https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html 
+      and https://quickstart-network-security.github.io/option1.html.
+    Type: String
+  DVWARemoteAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: Allowed CIDR block for external SSH access to the DVWAs.
+    Type: String
+    Default: '127.0.0.1/32'
+  VPCID:
+    Description: ID of the VPC (e.g., vpc-0343606e).
+    Type: 'AWS::EC2::VPC::Id'
+  RootVolumeSize:
+    Description: The size in GB for the root EBS volume.
+    Type: Number
+    Default: '10'
+Rules:
+  SubnetsInVPC:
+    Assertions:
+      - Assert:
+          'Fn::EachMemberIn':
+            - 'Fn::ValueOfAll':
+                - 'AWS::EC2::Subnet::Id'
+                - VpcId
+            - 'Fn::RefAll': 'AWS::EC2::VPC::Id'
+        AssertDescription: All subnets must exist in the VPC.
+Mappings:
+  RegionMap:
+    us-east-1: #North Virginia
+      DvwaAMI: ami-091ed521de20a50c2
+    us-east-2: #Ohio
+      DvwaAMI: ami-03d0d38f817e95c6f
+    us-west-1: #North California
+      DvwaAMI: ami-0b9e4c39f148b835c
+    us-west-2: #Oregon
+      DvwaAMI: ami-0adb84ff1c722394f
+Conditions:
+  UsingDefaultBucket: !Equals
+    - !Ref QSS3BucketName
+    - 'quickstart-network-security'
+Resources:
+  DVWASecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "DVWA-SG1"
+      GroupDescription: "Security group to access DVWA instance"
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: !Ref DVWARemoteAccessCIDR
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 0
+        ToPort: 65535
+        CidrIp: 0.0.0.0/0
+  DVWA: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId:
+        Fn::FindInMap:
+          - RegionMap
+          - Ref: AWS::Region
+          - DvwaAMI
+      InstanceType: !Ref DVWAInstanceType
+      KeyName: !Ref KeyPairName
+      Tags:
+      - Key: Name
+        Value: DVWA
+      SubnetId: !Ref PublicSubnet1ID
+      SecurityGroupIds:
+        - Ref: DVWASecurityGroup
+      BlockDeviceMappings: 
+      - DeviceName: /dev/sdm
+        Ebs: 
+          DeleteOnTermination: true
+          VolumeSize: !Ref RootVolumeSize
+Outputs:
+  DVWASecurityGroup:
+    Description: DVWA security group ID.
+    Value: !Ref DVWASecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-DVWASecurityGroupID'
+  DVWAPublicIP:
+    Description: DVWA instance Public IP
+    Value: !GetAtt DVWA.PublicIp
+    Export:
+      Name: !Sub '${AWS::StackName}-DVWAInstancePublicIP'
+  Postdeployment:
+    Description: See the deployment guide for post-deployment steps.
+    Value: https://aws.amazon.com/quickstart/?quickstart-all.sort-by=item.additionalFields.sortDate&quickstart-all.sort-order=desc&awsm.page-quickstart-all=5
