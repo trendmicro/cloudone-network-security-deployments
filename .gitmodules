@@ -1,0 +1,9 @@
+[submodule "edge-deployment/submodules/quickstart-aws-acm-certificate"]
+	path = edge-deployment/submodules/quickstart-aws-acm-certificate
+	url = git@github.com:aws-quickstart/quickstart-aws-acm-certificate.git
+[submodule "edge-deployment/submodules/quickstart-aws-vpc"]
+	path = edge-deployment/submodules/quickstart-aws-vpc
+	url = git@github.com:aws-quickstart/quickstart-aws-vpc.git
+[submodule "edge-deployment/submodules/quickstart-linux-bastion"]
+	path = edge-deployment/submodules/quickstart-linux-bastion
+	url = git@github.com:aws-quickstart/quickstart-linux-bastion.git
